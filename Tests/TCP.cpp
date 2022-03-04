@@ -31,7 +31,7 @@ TEST(kls_io, TcpEcho) {
     using namespace kls::coroutine;
 
     auto ServerOnceEcho = []() -> ValueAsync<void> {
-        auto accept = CreateAcceptorTCP(Address::CreateIPv4("0.0.0.0").value(), 30080, 128);
+        auto accept = acceptor_tcp(Address::CreateIPv4("0.0.0.0").value(), 30080, 128);
         auto&& [stat, address, stream] = co_await accept->once();
         char buffer[1000];
         auto resultA = co_await stream->read({ buffer, 1000 });
@@ -41,7 +41,7 @@ TEST(kls_io, TcpEcho) {
     };
 
     auto ClientOnce = []() -> ValueAsync<void> {
-        auto conn = co_await Connect(Address::CreateIPv4("127.0.0.1").value(), 30080);
+        auto conn = co_await connect(Address::CreateIPv4("127.0.0.1").value(), 30080);
         char data[13] = "Hello World\n";
         char buffer[1000];
         co_await conn->write({ data, 13 });

@@ -217,7 +217,7 @@ namespace {
         }
     };
 
-    std::unique_ptr<AcceptorTCP> AcceptorV4(Address address, int port, int backlog) {
+    std::unique_ptr<AcceptorTCP> acceptor4(Address address, int port, int backlog) {
         auto socket = createSocket(address.family());
         detail::IOCP::bind(HANDLE(socket.get()));
         sockaddr_in target{ .sin_family = AF_INET, .sin_port = htons(port) };
@@ -227,7 +227,7 @@ namespace {
         throw exception_errc(detail::map_error(WSAGetLastError()));
     }
 
-    std::unique_ptr<AcceptorTCP> AcceptorV6(Address address, int port, int backlog) {
+    std::unique_ptr<AcceptorTCP> acceptor6(Address address, int port, int backlog) {
         auto socket = createSocket(address.family());
         detail::IOCP::bind(HANDLE(socket.get()));
         sockaddr_in6 target{ .sin6_family = AF_INET6, .sin6_port = htons(port) };
@@ -239,7 +239,7 @@ namespace {
 }
 
 namespace kls::io {
-    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> Connect(Address address, int port) {
+    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> connect(Address address, int port) {
         auto wsa = detail::WSA::get();
         auto socket = createSocket(address.family());
         detail::IOCP::bind(HANDLE(socket.get()));
@@ -249,13 +249,13 @@ namespace kls::io {
         co_return std::make_unique<SocketTcpImpl>(socket.reset(INVALID_SOCKET));
     }
 
-    std::unique_ptr<AcceptorTCP> CreateAcceptorTCP(Address address, int port, int backlog) {
+    std::unique_ptr<AcceptorTCP> acceptor_tcp(Address address, int port, int backlog) {
         auto wsa = detail::WSA::get();
         switch (address.family()) {
         case Address::AF_IPv4:
-            return AcceptorV4(address, port, backlog);
+            return acceptor4(address, port, backlog);
         case Address::AF_IPv6:
-            return AcceptorV6(address, port, backlog);
+            return acceptor6(address, port, backlog);
         default:
             throw std::runtime_error("Invalid Peer Family");
         }

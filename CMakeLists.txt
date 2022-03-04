@@ -32,7 +32,11 @@ target_include_directories(kls.io INTERFACE ${_KLS_THS_PUB_PATH} ${_KLS_THS_SYS_
 target_link_libraries(kls.io PUBLIC kls.essential kls.coroutine kls.thread)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    target_link_libraries(kls.io PUBLIC ws2_32 mswsock)
+    target_link_libraries(kls.io PRIVATE ws2_32 mswsock)
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(kls.io PRIVATE PkgConfig::liburing)
 endif()
 
 add_library(klsxx::io ALIAS kls.io)

@@ -57,7 +57,7 @@ namespace kls::io {
         virtual IOAwait<Status> close() noexcept = 0;
     };
 
-    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> Connect(Address address, int port);
+    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> connect(Address address, int port);
 
     struct AcceptorTCP : PmrBase {
         struct Result {
@@ -71,5 +71,5 @@ namespace kls::io {
         virtual IOAwait<Status> close() noexcept = 0;
     };
 
-    std::unique_ptr<AcceptorTCP> CreateAcceptorTCP(Address address, int port, int backlog);
+    std::unique_ptr<AcceptorTCP> acceptor_tcp(Address address, int port, int backlog);
 }

@@ -1,35 +1,38 @@
-#include "IO/Block.h"
+/*
+* Copyright (c) 2022 DWVoid and Infinideastudio Team
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to deal
+* in the Software without restriction, including without limitation the rights
+* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in all
+* copies or substantial portions of the Software.
+
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+* SOFTWARE.
+*/
+
 #include "Uring.h"
-#include "Error.h"
-#include "Temp/Deque.h"
-#include "System/FileSystem.h"
 #include <vector>
 #include <fcntl.h>
-
-using namespace IO;
-using Internal::Core;
+#include <filesystem>
+#include "kls/io/Block.h"
 
 namespace {
-    temp::deque<std::array<uint64_t, 3>> SpliceComplex(
-            uint64_t *buffers, uint64_t *sizes,
-            uint64_t *offsets, uint64_t *spans
-    ) {
-        auto result = temp::deque<std::array<uint64_t, 3>>();
-        uint64_t offset = *offsets, span = *spans, head = *buffers, size = *sizes;
-        for (;;) {
-            while (size > 0) {
-                const auto slice = std::min(size, span);
-                result.push_back({head, offset, slice});
-                head += slice, size -= slice, offset += slice, span -= slice;
-                if (span == 0) (offset = *(++offsets), span = *(++spans));
-                if (span == 0) return result;
-            }
-            head = *(++buffers), size = *(++sizes);
-            if (size == 0) throw IO::exception_errc(IO::IO_EINVAL);
-        }
-    }
+    using namespace kls;
+    using namespace kls::io;
+    using namespace kls::io::detail;
+    using namespace kls::essential;
 
-    uint32_t FlagConv(uint32_t flags) {
+    uint32_t flag_conv(uint32_t flags) {
         uint32_t result = 0;
         const auto read = flags & Block::Flag::F_READ;
         const auto write = flags & Block::Flag::F_WRITE;
@@ -46,107 +49,52 @@ namespace {
         return result;
     }
 
+    IOAwait<IOResult> open(Uring &core, const char *path, uint32_t flags, mode_t mode) {
+        auto lk = core.lock();
+        return core.create<IOResult, Uring::Open>(0, path, static_cast<int>(flags), mode);
+    }
+
     class Impl final : public Block {
-        template <Core::Ops Op>
-        ValueAsync<IOResult> Simple(uint64_t buffer, uint64_t size, uint64_t offset) {
-            auto &core = Core::Get();
-            core.Lock.Enter();
-            auto action = Core::Create<Op>(core, mFd, reinterpret_cast<void *>(buffer), size, offset);
-            core.Lock.Leave();
-            co_return Internal::MapResult(co_await action);
-        }
-
-        template <Core::Ops Op>
-        auto PrepareComplex(uint64_t *buffers, uint64_t *sizes, uint64_t *offsets, uint64_t *spans) {
-            auto &core = Core::Get();
-            auto slices = SpliceComplex(buffers, sizes, offsets, spans);
-            auto fin = std::make_unique<Core::Await[]>(slices.size());
-            auto iter = fin.get();
-            core.Lock.Enter();
-            auto total = uint64_t(0);
-            for (auto &&[buffer, offset, size]: slices) {
-                total += size;
-                auto wrap = Core::Wrap<Op>(core, mFd, reinterpret_cast<void *>(buffer), size, offset);
-                std::construct_at(iter++, wrap);
-            }
-            core.Lock.Leave();
-            return std::tuple{std::move(fin), slices.size(), total};
-        }
-
-        template <Core::Ops Op>
-        ValueAsync<Status> Complex(uint64_t *buffers, uint64_t *sizes, uint64_t *offsets, uint64_t *spans) {
-            auto&&[fin, count, total] = PrepareComplex<Op>(buffers, sizes, offsets, spans);
-            auto completed = uint64_t(0);
-            auto aggregated = Status::IO_OK;
-            for (auto i = 0; i < count; ++i) {
-                auto& fi = fin[i];
-                const auto result = Internal::MapResult(co_await fi);
-                if (!result.success() && aggregated == Status::IO_OK)
-                    aggregated = result.error();
-                else
-                    completed += result.result();
-            }
-            if (completed != total && aggregated == Status::IO_OK) aggregated = Status::IO_EIO;
-            co_return aggregated;
+        template<Uring::Ops Op>
+        IOAwait<IOResult> simple(Span<> span, uint64_t offset) noexcept {
+            auto lk = m_core->lock();
+            return m_core->create<IOResult, Op>(mFd, span.data(), span.size(), offset);
         }
 
     public:
-        explicit Impl(int fd) noexcept: mFd{fd} {}
+        Impl(int fd, std::shared_ptr<Uring> &&core) noexcept: mFd{fd}, m_core{std::move(core)} {}
 
-        ValueAsync<IOResult> Read(uint64_t buffer, uint64_t size, uint64_t offset) override {
-            return Simple<Core::Read>(buffer, size, offset);
+        IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept override {
+            return simple<Uring::Read>(span, offset);
         }
 
-        ValueAsync<IOResult> Write(uint64_t buffer, uint64_t size, uint64_t offset) override {
-            return Simple<Core::Write>(buffer, size, offset);
+        IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept override {
+            return simple<Uring::Write>(span, offset);
         }
 
-        ValueAsync<Status> ReadA(uint64_t *buffers, uint64_t *sizes, uint64_t *offsets, uint64_t *spans) override {
-            return Complex<Core::Read>(buffers, sizes, offsets, spans);
+        IOAwait<Status> sync() noexcept override {
+            auto lk = m_core->lock();
+            return m_core->create<Status, Uring::Sync>(mFd, IORING_FSYNC_DATASYNC);
         }
 
-        ValueAsync<Status> WriteA(uint64_t *buffers, uint64_t *sizes, uint64_t *offsets, uint64_t *spans) override {
-            return Complex<Core::Write>(buffers, sizes, offsets, spans);
-        }
-
-        ValueAsync<Status> Sync() override {
-            auto &core = Core::Get();
-            core.Lock.Enter();
-            auto action = Core::Create<Core::Sync>(core, mFd, IORING_FSYNC_DATASYNC);
-            core.Lock.Leave();
-            co_return Internal::MapError(co_await action);
-        }
-
-        ValueAsync<Status> Close() override {
-            auto &core = Core::Get();
-            core.Lock.Enter();
-            auto sync = Core::Create<Core::Sync>(core, mFd, IORING_FSYNC_DATASYNC);
-            core.Lock.Leave();
-            if (auto ret = Internal::MapError(co_await sync); ret == IO::IO_OK) {
-                core.Lock.Enter();
-                auto action = Core::Create<Core::Close>(core, mFd);
-                core.Lock.Leave();
-                co_return Internal::MapError(co_await action);
-            } else co_return ret;
-        }
-
-        static ValueAsync<int> Open(std::string_view path, uint32_t flags) {
-            auto &core = Core::Get();
-            auto absolute = NEWorld::filesystem::absolute({path}).generic_string();
-            core.Lock.Enter();
-            auto open = Core::Create<Core::Open>(core, 0, absolute.c_str(), FlagConv(flags), 00600);
-            core.Lock.Leave();
-            if (const auto r = Internal::MapResult(co_await open); r.success())
-                co_return r.result();
-            else
-                throw exception_errc(r.error());
+        IOAwait<Status> close() noexcept override {
+            auto lk = m_core->lock();
+            return m_core->create<Status, Uring::Close>(mFd);
         }
 
     private:
         const int mFd;
+        std::shared_ptr<Uring> m_core;
     };
 }
 
-ValueAsync<std::unique_ptr<Block>> IO::OpenBlock(std::string_view path, uint32_t flags) {
-    co_return std::make_unique<Impl>(co_await Impl::Open(path, flags));
+namespace kls::io {
+    coroutine::ValueAsync<std::unique_ptr<Block>> open_block(std::string_view path, uint32_t flags) {
+        std::shared_ptr<Uring> core = Uring::get();
+        const auto absolute = std::filesystem::absolute({path}).generic_string();
+        if (const auto res = co_await open(*core, absolute.c_str(), flag_conv(flags), 00600); res.success())
+            co_return std::make_unique<Impl>(res.result(), std::move(core));
+        else
+            throw exception_errc(res.error());
+    }
 }

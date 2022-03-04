@@ -29,6 +29,8 @@
 #error "Platform Not Supported"
 #endif
 
+#include <cstring>
+
 namespace kls::io {
     Address Address::CreateIPv4(std::byte* data) noexcept {
         Address ret{};

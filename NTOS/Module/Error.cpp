@@ -20,8 +20,6 @@
 * SOFTWARE.
 */
 
-#pragma once
-
 #include "kls/io/Status.h"
 #include "kls/hal/System.h"
 
