@@ -31,42 +31,33 @@ TEST(kls_io, FileEcho) {
     using namespace kls::essential;
     using namespace kls::coroutine;
 
-    auto Write = []() -> ValueAsync<void> {
+    auto Write = []() -> ValueAsync<int> {
         auto file = co_await open_block("./test.kls.io.file.temp", Block::F_WRITE | Block::F_CREAT);
         char buffer[13] = "Hello World\n";
-        auto result = co_await file->write({ buffer, 13 }, 0);
-        if (result.success()) {
-            printf("num %d\n", result.result());
-        }
-        else {
-            printf("err %d\n", result.error());
-        }
+        auto result = (co_await file->write({ buffer, 13 }, 0)).get_result();
         co_await file->close();
+        co_return result;
     };
 
-    auto Read = []() -> ValueAsync<void> {
+    auto Read = []() -> ValueAsync<int> {
         auto file = co_await open_block("./test.kls.io.file.temp", Block::F_READ);
         char buffer[1000];
-        auto result = co_await file->read({ buffer, 1000 }, 0);
-        if (result.success()) {
-            puts(buffer);
-        }
-        else {
-            printf("err %d\n", result.error());
-        }
+        auto result = (co_await file->read({ buffer, 1000 }, 0)).get_result();
         co_await file->close();
+        co_return result;
     };
 
-    auto Network = [&]() -> ValueAsync<void> {
+    auto success = run_blocking([&]() -> ValueAsync<bool> {
         try {
-            co_await Write();
-            co_await Read();
+            auto write = co_await Write() == 13;
+            auto read = co_await Read() == 13;
             std::filesystem::remove_all("./test.kls.io.file.temp");
+            co_return write && read;
         }
-        catch (std::exception& e) {
-            puts(e.what());
+        catch (...) {
+            std::filesystem::remove_all("./test.kls.io.file.temp");
+            throw;
         }
-    };
-
-    Blocking().Await(Network());
+    });
+    ASSERT_TRUE(success);
 }

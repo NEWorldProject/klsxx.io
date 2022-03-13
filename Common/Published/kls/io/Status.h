@@ -111,6 +111,9 @@ namespace kls::io {
 
         [[nodiscard]] int32_t result() const noexcept { return mValue; }
 
+        int32_t get_result() const { // NOLINT
+            if (success()) return mValue; else throw exception_errc(Status(-mValue));
+        }
     private:
         int32_t mValue;
     };

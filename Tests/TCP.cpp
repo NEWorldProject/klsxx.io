@@ -50,14 +50,7 @@ TEST(kls_io, TcpEcho) {
         co_await conn->close();
     };
 
-    auto Network = [&]() -> ValueAsync<void> {
-        try {
-            co_await kls::coroutine::Await(ServerOnceEcho(), ClientOnce());
-        }
-        catch (std::exception& e) {
-            puts(e.what());
-        }
-    };
-
-    Blocking().Await(Network());
+    run_blocking([&]() -> ValueAsync<void> {
+        co_await kls::coroutine::Awaits(ServerOnceEcho(), ClientOnce());
+    });
 }
