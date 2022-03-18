@@ -24,7 +24,7 @@
 #include <gtest/gtest.h>
 #include "kls/io/Block.h"
 #include "kls/coroutine/Blocking.h"
-#include "kls/coroutine/Coroutine.h"
+#include "kls/coroutine/Operation.h"
 
 TEST(kls_io, FileEcho) {
     using namespace kls::io;

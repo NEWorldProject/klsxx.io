@@ -23,7 +23,7 @@
 #include <gtest/gtest.h>
 #include "kls/io/TCP.h"
 #include "kls/coroutine/Blocking.h"
-#include "kls/coroutine/Coroutine.h"
+#include "kls/coroutine/Operation.h"
 
 TEST(kls_io, TcpEcho) {
     using namespace kls::io;
@@ -51,6 +51,6 @@ TEST(kls_io, TcpEcho) {
     };
 
     run_blocking([&]() -> ValueAsync<void> {
-        co_await kls::coroutine::Awaits(ServerOnceEcho(), ClientOnce());
+        co_await kls::coroutine::awaits(ServerOnceEcho(), ClientOnce());
     });
 }

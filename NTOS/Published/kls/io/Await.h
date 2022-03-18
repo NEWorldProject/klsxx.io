@@ -29,7 +29,7 @@
 #include <coroutine>
 #include "kls/io/Status.h"
 #include "kls/hal/System.h"
-#include "kls/coroutine/Executor.h"
+#include "kls/coroutine/Trigger.h"
 
 namespace kls::io::detail {
 	class IOCP;
@@ -39,19 +39,10 @@ namespace kls::io::detail {
 
 namespace kls::io {
 	// on windows, non-IOCP io related operation is never async
-	class Await {
+	class Await: public AddressSensitive {
 	public:
 		template<class Fn> requires requires(Fn f) { { f() } -> std::same_as<DWORD>; }
 		Await(const Fn& fn) noexcept : m_result{ fn() } {}
-
-		// Await-related classes are not supposed to be copied nor moved
-		Await(Await&&) = delete;
-
-		Await(const Await&) = delete;
-
-		Await& operator=(Await&&) = delete;
-
-		Await& operator=(const Await&) = delete;
 
 		[[nodiscard]] constexpr bool await_ready() const noexcept { return true; }
 
@@ -65,8 +56,7 @@ namespace kls::io {
 	};
 
 	template <class T>
-	class IOAwait {
-		static constexpr uintptr_t INVALID_PTR = std::numeric_limits<uintptr_t>::max();
+	class IOAwait: private coroutine::SingleExecutorTrigger, private coroutine::ExecutorAwaitEntry {
 	public:
 		template<class Fn> requires requires(Fn f, LPOVERLAPPED o) { { f(o) } -> std::same_as<DWORD>; }
 		IOAwait(const Fn& fn) noexcept {
@@ -76,51 +66,26 @@ namespace kls::io {
 			}
 		}
 
-		// Await-related classes are not supposed to be copied nor moved
-		IOAwait(IOAwait&&) = delete;
-
-		IOAwait(const IOAwait&) = delete;
-
-		IOAwait& operator=(IOAwait&&) = delete;
-
-		IOAwait& operator=(const IOAwait&) = delete;
-
 		[[nodiscard]] bool await_ready() const noexcept { return m_immediate_completion; }
 
 		[[nodiscard]] bool await_suspend(std::coroutine_handle<> h) {
-			m_resume = coroutine::CurrentExecutor();
-			for (;;) {
-				auto handle = m_handle.load();
-				// if the state has been finalized, direct dispatch
-				if (handle == INVALID_PTR) return false;
-				if (handle) std::abort();
-				// try to setup dispatch
-				if (m_handle.compare_exchange_weak(handle, reinterpret_cast<uintptr_t>(h.address()))) return true;
-			}
+            ExecutorAwaitEntry::set_handle(h);
+            return SingleExecutorTrigger::trap(*this);
 		}
 
 		T await_resume() const noexcept {
-			if constexpr (std::is_same_v<Status, T>) {
-				return detail::map_error(m_result);
-			}
-			else if constexpr (std::is_same_v<IOResult, T>) {
-				return IOResult(detail::map_error(m_result), m_transferred);
-			}
+			if constexpr (std::is_same_v<Status, T>) return detail::map_error(m_result);
+			else if constexpr (std::is_same_v<IOResult, T>) return IOResult(detail::map_error(m_result), m_transferred);
 			else static_assert("T is invalid");
 		}
 	private:
 		OVERLAPPED m_overlap{};
 		DWORD m_result{}, m_transferred{};
 		bool m_immediate_completion{ false };
-		std::atomic<uintptr_t> m_handle{ 0 };
-		kls::coroutine::IExecutor* m_resume{ nullptr };
 
 		void release(DWORD code, DWORD transferred) noexcept {
 			setResult(code, transferred);
-			if (auto ths = m_handle.exchange(INVALID_PTR); ths) {
-				auto handle = std::coroutine_handle<>::from_address(reinterpret_cast<void*>(ths));
-				if (m_resume) m_resume->Enqueue(handle); else handle.resume();
-			}
+            SingleExecutorTrigger::pull();
 		}
 
 		void setResult(DWORD code, DWORD transferred) noexcept {

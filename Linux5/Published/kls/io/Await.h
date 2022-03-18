@@ -22,14 +22,12 @@
 
 #pragma once
 
-#include <atomic>
 #include <limits>
 #include <utility>
 #include <concepts>
-#include <coroutine>
 #include <sys/socket.h>
 #include "kls/io/Status.h"
-#include "kls/coroutine/Executor.h"
+#include "kls/coroutine/Trigger.h"
 
 namespace kls::io::detail {
 	class Uring;
@@ -37,35 +35,21 @@ namespace kls::io::detail {
 	Status map_error(int32_t sys) noexcept;
     IOResult map_result(int32_t sys) noexcept;
 
-    struct AwaitCore {
-        constexpr AwaitCore() noexcept = default;
-
-        AwaitCore(AwaitCore &&) = delete;
-
-        AwaitCore(const AwaitCore &) = delete;
-
-        AwaitCore &operator=(AwaitCore &&) = delete;
-
-        AwaitCore &operator=(const AwaitCore &) = delete;
+    struct AwaitCore: private coroutine::SingleExecutorTrigger, private coroutine::ExecutorAwaitEntry {
+        AwaitCore() noexcept = default;
 
         [[nodiscard]] constexpr bool await_ready() const noexcept { return false; }
 
         bool await_suspend(std::coroutine_handle<> h) {
-            const auto address = h.address();
-            for (;;) {
-                auto val = m_handle.load();
-                if (val == INVALID_PTR) return false;
-                if (m_handle.compare_exchange_weak(val, address)) return true;
-            }
+            ExecutorAwaitEntry::set_handle(h);
+            return SingleExecutorTrigger::trap(*this);
         }
     private:
-        inline static void *INVALID_PTR = std::bit_cast<void *>(~uintptr_t(0));
         int32_t m_result{};
-        std::atomic<void *> m_handle{nullptr};
 
         void release(int32_t status) {
             m_result = status;
-            if (auto ths = m_handle.exchange(INVALID_PTR); ths) std::coroutine_handle<>::from_address(ths).resume();
+            SingleExecutorTrigger::pull();
         }
 
         friend class detail::Uring;
