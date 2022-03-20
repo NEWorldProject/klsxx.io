@@ -105,18 +105,15 @@ namespace kls::io {
 
     class IOResult final {
     public:
-        explicit constexpr IOResult(Status status, int32_t result = 0) noexcept:
+        explicit constexpr IOResult(Status status) noexcept:
+                mValue(-status) {}
+        explicit constexpr IOResult(Status status, int32_t result) noexcept:
                 mValue(status == IO_OK ? result : -status) {}
 
         [[nodiscard]] bool success() const noexcept { return mValue >= 0; }
-
         [[nodiscard]] Status error() const noexcept { return success() ? IO_OK : Status(-mValue); }
-
         [[nodiscard]] int32_t result() const noexcept { return mValue; }
-
-        int32_t get_result() const { // NOLINT
-            if (success()) return mValue; else throw exception_errc(Status(-mValue));
-        }
+        int32_t get_result() const { if (success()) return mValue; else throw exception_errc(Status(-mValue)); } // NOLINT
     private:
         int32_t mValue;
     };

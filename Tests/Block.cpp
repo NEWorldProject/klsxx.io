@@ -31,26 +31,29 @@ TEST(kls_io, FileEcho) {
     using namespace kls::essential;
     using namespace kls::coroutine;
 
-    auto Write = []() -> ValueAsync<int> {
+    static constexpr auto payload = std::string_view("Hello World\n");
+    static constexpr auto payload_size = payload.size() + 1;
+
+    auto Write = []() -> ValueAsync<bool> {
         auto file = co_await open_block("./test.kls.io.file.temp", Block::F_WRITE | Block::F_CREAT);
-        char buffer[13] = "Hello World\n";
-        auto result = (co_await file->write({ buffer, 13 }, 0)).get_result();
-        co_await file->close();
-        co_return result;
+        co_return co_await uses(file, [](Block& file) -> ValueAsync<int> {
+            co_return (co_await file.write({ payload.data(), payload_size }, 0)).get_result() == payload_size;
+        });
     };
 
-    auto Read = []() -> ValueAsync<int> {
+    auto Read = []() -> ValueAsync<bool> {
         auto file = co_await open_block("./test.kls.io.file.temp", Block::F_READ);
-        char buffer[1000];
-        auto result = (co_await file->read({ buffer, 1000 }, 0)).get_result();
-        co_await file->close();
-        co_return result;
+        co_return co_await uses(file, [](Block& file) -> ValueAsync<int> {
+            char buffer[1000];
+            if ((co_await file.read({ buffer, 1000 }, 0)).get_result() != payload_size) co_return false;
+            co_return payload.compare(buffer) == 0;
+        });
     };
 
     auto success = run_blocking([&]() -> ValueAsync<bool> {
         try {
-            auto write = co_await Write() == 13;
-            auto read = co_await Read() == 13;
+            auto write = co_await Write();
+            auto read = co_await Read();
             std::filesystem::remove_all("./test.kls.io.file.temp");
             co_return write && read;
         }

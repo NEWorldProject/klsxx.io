@@ -30,24 +30,29 @@ TEST(kls_io, TcpEcho) {
     using namespace kls::essential;
     using namespace kls::coroutine;
 
+    static constexpr auto payload = std::string_view("Hello World\n");
+    static constexpr auto payload_size = payload.size() + 1;
+
     auto ServerOnceEcho = []() -> ValueAsync<void> {
         auto accept = acceptor_tcp(Address::CreateIPv4("0.0.0.0").value(), 30080, 128);
-        auto&&[address, stream] = co_await accept->once();
-        char buffer[1000];
-        auto resultA = co_await stream->read({buffer, 1000});
-        co_await stream->write({buffer, static_cast<uint32_t>(resultA.result())});
-        co_await stream->close();
-        co_await accept->close();
+        co_await uses(accept, [](AcceptorTCP& accept) -> ValueAsync<void> {
+            auto&&[address, stream] = co_await accept.once();
+            co_await uses(stream, [](SocketTCP &conn) -> ValueAsync<void> {
+                char buffer[1000];
+                auto resultA = (co_await conn.read({buffer, 1000})).get_result();
+                (co_await (conn.write({buffer, resultA}))).get_result();
+            });
+        });
     };
 
     auto ClientOnce = []() -> ValueAsync<void> {
-        auto conn = co_await connect(Address::CreateIPv4("127.0.0.1").value(), 30080);
-        char data[13] = "Hello World\n";
-        char buffer[1000];
-        co_await conn->write({data, 13});
-        auto resultA = co_await conn->read({buffer, 1000});
-        puts(buffer);
-        co_await conn->close();
+        auto file = co_await connect(Address::CreateIPv4("127.0.0.1").value(), 30080);
+        if (!co_await uses(file, [](SocketTCP& conn) -> ValueAsync<bool> {
+            char buffer[1000];
+            if ((co_await conn.write({payload.data(), payload_size})).get_result() != payload_size) co_return false;
+            if ((co_await conn.read({buffer, 1000})).get_result() != payload_size) co_return false;
+            co_return payload.compare(buffer) == 0;
+        })) throw std::runtime_error("Tcp Echo Content Check Failure");
     };
 
     run_blocking([&]() -> ValueAsync<void> {
