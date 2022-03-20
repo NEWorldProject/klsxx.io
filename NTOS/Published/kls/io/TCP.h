@@ -33,12 +33,12 @@ namespace kls::io {
     struct IoVec : private WSABUF {
         constexpr IoVec() noexcept = default;
 
-        IoVec(essential::Span<> span) noexcept {
+        IoVec(essential::Span<> span) noexcept { //NOLINT
             len = static_cast<ULONG>(span.size());
             buf = static_cast<char*>(span.data());
         }
 
-        IoVec(void* data, size_t size) noexcept {
+        IoVec(void* data, size_t size) noexcept { //NOLINT
             len = static_cast<ULONG>(size);
             buf = static_cast<char*>(data);
         }
@@ -60,8 +60,7 @@ namespace kls::io {
 
     struct AcceptorTCP : PmrBase {
         struct Result {
-            Status Stat{IO_OK};
-            Address Peer{};
+            std::pair<Address, int> Peer{};
             std::unique_ptr<SocketTCP> Handle{nullptr};
         };
 

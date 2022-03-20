@@ -65,7 +65,7 @@ namespace kls::io {
         template <class Fn> requires std::is_invocable_v<Fn, IOAwait*>
         explicit IOAwait(Fn&& fn) noexcept: AwaitCore() { fn(this); }
 
-        T await_resume() const noexcept {
+        [[nodiscard]] T await_resume() const noexcept {
             if constexpr (std::is_same_v<Status, T>) return detail::map_error(get_result());
             else if constexpr (std::is_same_v<IOResult, T>) return detail::map_result(get_result());
             else static_assert("T is invalid");

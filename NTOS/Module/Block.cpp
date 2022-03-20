@@ -116,51 +116,51 @@ namespace {
         explicit BlockImpl(HANDLE h) noexcept : m_handle(h) {}
 
         IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept override {
-            return IOAwait<IOResult>(
-                [this, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
-                    // According to related MSDN documentation, 
-                    // IOCP overlapped ReadFile/WriteFile cannot return success information synchonously
-                    // We handle it in the reversed manner: if it fails, returns the error directly.
-                    // Otherwise reports is as PENDING as result is delivered asychronously by the callback
-                    // Same for the function below
-                    setOverlapped(o, offset);
-                    const auto size = static_cast<DWORD>(span.size());
-                    if (ReadFile(m_handle, span.data(), size, nullptr, o) == 0) return GetLastError();
-                    return ERROR_IO_PENDING;
-                }
-            );
+            return {
+                    [this, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
+                        // According to related MSDN documentation,
+                        // IOCP overlapped ReadFile/WriteFile cannot return success information synchonously
+                        // We handle it in the reversed manner: if it fails, returns the error directly.
+                        // Otherwise reports is as PENDING as result is delivered asychronously by the callback
+                        // Same for the function below
+                        setOverlapped(o, offset);
+                        const auto size = static_cast<DWORD>(span.size());
+                        if (ReadFile(m_handle, span.data(), size, nullptr, o) == 0) return GetLastError();
+                        return ERROR_IO_PENDING;
+                    }
+            };
         }
 
         IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept override {
-            return IOAwait<IOResult>(
-                [this, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
-                    setOverlapped(o, offset);
-                    const auto size = static_cast<DWORD>(span.size());
-                    if (WriteFile(m_handle, span.data(), size, nullptr, o) == 0) return GetLastError();
-                    return ERROR_IO_PENDING;
-                }
-            );
+            return {
+                    [this, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
+                        setOverlapped(o, offset);
+                        const auto size = static_cast<DWORD>(span.size());
+                        if (WriteFile(m_handle, span.data(), size, nullptr, o) == 0) return GetLastError();
+                        return ERROR_IO_PENDING;
+                    }
+            };
         }
 
         Await sync() noexcept override {
-            return Await(
-                [this]() noexcept -> DWORD {
-                    if (FlushFileBuffers(m_handle)) return ERROR_SUCCESS; else return GetLastError();
-                }
-            );
+            return {
+                    [this]() noexcept -> DWORD {
+                        if (FlushFileBuffers(m_handle)) return ERROR_SUCCESS; else return GetLastError();
+                    }
+            };
         }
 
         Await close() noexcept override {
-            return Await(
-                [this]() noexcept -> DWORD {
-                    if (CloseHandle(m_handle)) return ERROR_SUCCESS; else return GetLastError();
-                }
-            );
+            return {
+                    [this]() noexcept -> DWORD {
+                        if (CloseHandle(m_handle)) return ERROR_SUCCESS; else return GetLastError();
+                    }
+            };
         }
     private:
         HANDLE m_handle;
 
-        void setOverlapped(LPOVERLAPPED o, uint64_t offset) noexcept {
+        static void setOverlapped(LPOVERLAPPED o, uint64_t offset) noexcept {
             static constexpr uint64_t mask = std::numeric_limits<DWORD>::max();
             static constexpr uint64_t shift = std::numeric_limits<DWORD>::digits;
             o->Offset = static_cast<DWORD>(offset && mask);

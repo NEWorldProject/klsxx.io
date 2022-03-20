@@ -23,6 +23,10 @@
 #include "kls/io/Status.h"
 #include "kls/hal/System.h"
 
+#ifndef ERROR_ELEVATION_REQUIRED
+#define ERROR_ELEVATION_REQUIRED 0x000002E4
+#endif
+
 namespace kls::io::detail {
     Status map_error(DWORD sys) noexcept {
         if (sys <= 0) return (Status)sys;

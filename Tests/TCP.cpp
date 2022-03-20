@@ -32,10 +32,10 @@ TEST(kls_io, TcpEcho) {
 
     auto ServerOnceEcho = []() -> ValueAsync<void> {
         auto accept = acceptor_tcp(Address::CreateIPv4("0.0.0.0").value(), 30080, 128);
-        auto&& [stat, address, stream] = co_await accept->once();
+        auto&&[address, stream] = co_await accept->once();
         char buffer[1000];
-        auto resultA = co_await stream->read({ buffer, 1000 });
-        co_await stream->write({ buffer, static_cast<uint32_t>(resultA.result()) });
+        auto resultA = co_await stream->read({buffer, 1000});
+        co_await stream->write({buffer, static_cast<uint32_t>(resultA.result())});
         co_await stream->close();
         co_await accept->close();
     };
@@ -44,8 +44,8 @@ TEST(kls_io, TcpEcho) {
         auto conn = co_await connect(Address::CreateIPv4("127.0.0.1").value(), 30080);
         char data[13] = "Hello World\n";
         char buffer[1000];
-        co_await conn->write({ data, 13 });
-        auto resultA = co_await conn->read({ buffer, 1000 });
+        co_await conn->write({data, 13});
+        auto resultA = co_await conn->read({buffer, 1000});
         puts(buffer);
         co_await conn->close();
     };

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <exception>
 
 namespace kls::io {
@@ -98,6 +99,8 @@ namespace kls::io {
         Status errc;
 
         explicit exception_errc(const Status status) noexcept: errc(status) {}
+
+        [[nodiscard]] const char *what() const noexcept override;
     };
 
     class IOResult final {
