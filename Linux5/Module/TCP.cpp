@@ -20,8 +20,8 @@
 * SOFTWARE.
 */
 
+#include "IP.h"
 #include "Uring.h"
-#include <arpa/inet.h>
 #include "kls/io/TCP.h"
 
 namespace {
@@ -100,13 +100,11 @@ namespace {
 
         coroutine::ValueAsync<Result> once() override {
             sockaddr_in peer{};
-            if (const auto res = co_await accept(PSAddr(&peer), sizeof(peer)); !res.success())
-                co_return Result{.Stat = res.error()};
-            else
-                co_return Result{
-                        .Peer = Address::CreateIPv4(reinterpret_cast<std::byte *>(&(peer.sin_addr.s_addr))),
-                        .Handle = std::make_unique<TcpImpl>(res.result(), m_core)
-                };
+            const auto res = (co_await accept(PSAddr(&peer), sizeof(peer))).get_result();
+            co_return Result{
+                    .peer = from_os_ip(peer),
+                    .handle = std::make_unique<TcpImpl>(res, m_core)
+            };
         }
     };
 
@@ -116,13 +114,11 @@ namespace {
 
         coroutine::ValueAsync<Result> once() override {
             sockaddr_in6 peer{};
-            if (const auto res = co_await accept(PSAddr(&peer), sizeof(peer)); !res.success())
-                co_return Result{.Stat = res.error()};
-            else
-                co_return Result{
-                        .Peer = Address::CreateIPv6(reinterpret_cast<std::byte *>(&(peer.sin6_addr.s6_addr))),
-                        .Handle = std::make_unique<TcpImpl>(res.result(), m_core)
-                };
+            const auto res = (co_await accept(PSAddr(&peer), sizeof(peer))).get_result();
+            co_return Result{
+                    .peer = from_os_ip(peer),
+                    .handle = std::make_unique<TcpImpl>(res, m_core)
+            };
         }
     };
 
@@ -135,7 +131,7 @@ namespace {
         std::shared_ptr<Uring> core = Uring::get();
         const auto sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock != -1) {
-            sockaddr_in in{.sin_family = AF_INET, .sin_port = htons(port)};
+            sockaddr_in in = to_os_ipv4(address, port);
             if (const auto res = co_await connect(*core, sock, PSAddr(&in), sizeof(in)); res.success())
                 co_return std::make_unique<TcpImpl>(sock, std::move(core));
             close(sock);
@@ -147,7 +143,7 @@ namespace {
         std::shared_ptr<Uring> core = Uring::get();
         const auto sock = socket(AF_INET6, SOCK_STREAM, 0);
         if (sock != -1) {
-            sockaddr_in6 in{.sin6_family = AF_INET6, .sin6_port = htons(port)};
+            sockaddr_in6 in = to_os_ipv6(address, port);
             if (const auto res = co_await connect(*core, sock, PSAddr(&in), sizeof(in)); res.success())
                 co_return std::make_unique<TcpImpl>(sock, std::move(core));
             close(sock);
@@ -158,7 +154,7 @@ namespace {
     std::unique_ptr<AcceptorTCP> acceptor4(Address address, int port, int backlog) {
         const auto sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock != -1) {
-            sockaddr_in target{.sin_family = AF_INET, .sin_port = htons(port)};
+            sockaddr_in target = to_os_ipv4(address, port);
             if (bind(sock, PSAddr(&target), sizeof(target)) == -1) goto error;
             if (listen(sock, backlog) != -1) return std::make_unique<AcceptImpl4>(sock);
             error:
@@ -170,7 +166,7 @@ namespace {
     std::unique_ptr<AcceptorTCP> acceptor6(Address address, int port, int backlog) {
         const auto sock = socket(AF_INET6, SOCK_STREAM, 0);
         if (sock != -1) {
-            sockaddr_in6 target{.sin6_family = AF_INET6, .sin6_port = htons(port)};
+            sockaddr_in6 target = to_os_ipv6(address, port);
             if (bind(sock, PSAddr(&target), sizeof(target)) == -1) goto error;
             if (listen(sock, backlog) != -1) return std::make_unique<AcceptImpl6>(sock);
             error:

@@ -20,35 +20,28 @@
 * SOFTWARE.
 */
 
-#pragma once
-
-#include <cstddef>
-#include <optional>
-#include <string_view>
+#include "kls/io/TCPUtil.h"
 
 namespace kls::io {
-    class Address {
-    public:
-        enum Family {
-            AF_IPv4, AF_IPv6
-        };
+    coroutine::ValueAsync<IOResult> read_fully(SocketTCP& s, essential::Span<> buffer) noexcept {
+        auto bytes = essential::static_span_cast<char>(buffer);
+        for (;;) {
+            if (auto read_op = co_await s.read(bytes); read_op.success()) {
+                auto done = read_op.result();
+                if (done == bytes.size()) co_return IOResult(IO_OK, int32_t(buffer.size()));
+                bytes = essential::Span<char>(bytes.data() + done, bytes.size() - done);
+            } else co_return read_op;
+        }
+    }
 
-        static Address CreateIPv4(std::byte* data) noexcept;
-
-        static Address CreateIPv6(std::byte* data) noexcept;
-
-        static std::optional<Address> CreateIPv4(std::string_view text) noexcept;
-
-        static std::optional<Address> CreateIPv6(std::string_view text) noexcept;
-
-        [[nodiscard]] auto family() const noexcept { return mFamily; }
-
-        [[nodiscard]] auto data() const noexcept { return mStorage; }
-
-    private:
-        Family mFamily;
-        std::byte mStorage[16];
-    };
-
-    using Peer = std::pair<Address, int>;
+    coroutine::ValueAsync<IOResult> write_fully(SocketTCP& s, essential::Span<> buffer) noexcept {
+        auto bytes = essential::static_span_cast<char>(buffer);
+        for (;;) {
+            if (auto write_op = co_await s.write(bytes); write_op.success()) {
+                auto done = write_op.result();
+                if (done == bytes.size()) co_return IOResult(IO_OK, int32_t(buffer.size()));
+                bytes = essential::Span<char>(bytes.data() + done, bytes.size() - done);
+            } else co_return write_op;
+        }
+    }
 }

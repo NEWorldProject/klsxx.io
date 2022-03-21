@@ -193,7 +193,7 @@ namespace {
                 } else throw exception_errc(result);
             }
             syncAccept(accept.get());
-            co_return Result{.Peer = from_os_ip(remote), .Handle = std::make_unique<SocketTcpImpl>(accept.reset())};
+            co_return Result{.peer = from_os_ip(remote), .handle = std::make_unique<SocketTcpImpl>(accept.reset())};
         }
     private:
         LPFN_ACCEPTEX m_pfnAcceptEx{nullptr};

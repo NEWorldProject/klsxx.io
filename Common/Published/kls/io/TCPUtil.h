@@ -22,33 +22,11 @@
 
 #pragma once
 
-#include <cstddef>
-#include <optional>
-#include <string_view>
+#include "kls/io/TCP.h"
 
 namespace kls::io {
-    class Address {
-    public:
-        enum Family {
-            AF_IPv4, AF_IPv6
-        };
+    coroutine::ValueAsync<IOResult> read_fully(SocketTCP& s, essential::Span<> buffer) noexcept;
 
-        static Address CreateIPv4(std::byte* data) noexcept;
-
-        static Address CreateIPv6(std::byte* data) noexcept;
-
-        static std::optional<Address> CreateIPv4(std::string_view text) noexcept;
-
-        static std::optional<Address> CreateIPv6(std::string_view text) noexcept;
-
-        [[nodiscard]] auto family() const noexcept { return mFamily; }
-
-        [[nodiscard]] auto data() const noexcept { return mStorage; }
-
-    private:
-        Family mFamily;
-        std::byte mStorage[16];
-    };
-
-    using Peer = std::pair<Address, int>;
+    coroutine::ValueAsync<IOResult> write_fully(SocketTCP& s, essential::Span<> buffer) noexcept;
 }
+

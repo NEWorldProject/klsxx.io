@@ -60,8 +60,8 @@ namespace kls::io {
 
     struct AcceptorTCP : PmrBase {
         struct Result {
-            std::pair<Address, int> Peer{};
-            std::unique_ptr<SocketTCP> Handle{nullptr};
+            Peer peer{};
+            std::unique_ptr<SocketTCP> handle{nullptr};
         };
 
         virtual coroutine::ValueAsync<Result> once() = 0;
