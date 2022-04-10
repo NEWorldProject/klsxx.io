@@ -40,11 +40,11 @@ namespace kls::io::detail {
     }
 
     inline std::pair<Address, int> from_os_ip(const sockaddr_in &in) noexcept {
-        return {Address::CreateIPv4((std::byte *) (&(in.sin_addr.s_addr))), ntohs(in.sin_port)}; //NOLINT
+        return {Address::CreateIPv4({&(in.sin_addr.s_addr), 4}), ntohs(in.sin_port)}; //NOLINT
     }
 
     inline std::pair<Address, int> from_os_ip(const sockaddr_in6 &in) noexcept {
-        return {Address::CreateIPv6((std::byte *) (&(in.sin6_addr.s6_addr))), ntohs(in.sin6_port)}; //NOLINT
+        return {Address::CreateIPv6({&(in.sin6_addr.s6_addr), 16}), ntohs(in.sin6_port)}; //NOLINT
     }
 
     template <class SockIn>

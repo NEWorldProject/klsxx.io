@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <optional>
 #include <string_view>
+#include "kls/Span.h"
 
 namespace kls::io {
     class Address {
@@ -33,9 +34,9 @@ namespace kls::io {
             AF_IPv4, AF_IPv6
         };
 
-        static Address CreateIPv4(std::byte* data) noexcept;
+        static Address CreateIPv4(Span<> data) noexcept;
 
-        static Address CreateIPv6(std::byte* data) noexcept;
+        static Address CreateIPv6(Span<> data) noexcept;
 
         static std::optional<Address> CreateIPv4(std::string_view text) noexcept;
 

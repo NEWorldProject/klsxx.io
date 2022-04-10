@@ -32,29 +32,29 @@
 #include <cstring>
 
 namespace kls::io {
-    Address Address::CreateIPv4(std::byte* data) noexcept {
+    Address Address::CreateIPv4(Span<> data) noexcept {
         Address ret{};
         ret.mFamily = AF_IPv4;
-        std::memcpy(ret.mStorage, data, 4);
+        std::memcpy(ret.mStorage, data.data(), 4);
         return ret;
     }
 
-    Address Address::CreateIPv6(std::byte* data) noexcept {
+    Address Address::CreateIPv6(Span<> data) noexcept {
         Address ret{};
         ret.mFamily = AF_IPv6;
-        std::memcpy(ret.mStorage, data, 16);
+        std::memcpy(ret.mStorage, data.data(), 16);
         return ret;
     }
 
     std::optional<Address> Address::CreateIPv4(std::string_view text) noexcept {
         if (in_addr p{}; inet_pton(AF_INET, text.data(), &p) == 1)
-            return CreateIPv4(reinterpret_cast<std::byte*>(&p.s_addr));
+            return CreateIPv4(Span{reinterpret_cast<std::byte*>(&p.s_addr), 4});
         return std::nullopt;
     }
 
     std::optional<Address> Address::CreateIPv6(std::string_view text) noexcept {
         if (in6_addr p{}; inet_pton(AF_INET6, text.data(), &p) == 1)
-            return CreateIPv6(reinterpret_cast<std::byte*>(&p.s6_addr));
+            return CreateIPv6(Span{reinterpret_cast<std::byte*>(&p.s6_addr), 16});
         return std::nullopt;
     }
 }
