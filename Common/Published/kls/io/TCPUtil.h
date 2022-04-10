@@ -25,8 +25,8 @@
 #include "kls/io/TCP.h"
 
 namespace kls::io {
-    coroutine::ValueAsync<IOResult> read_fully(SocketTCP& s, essential::Span<> buffer) noexcept;
+    coroutine::ValueAsync<IOResult> read_fully(SocketTCP& s, Span<> buffer) noexcept;
 
-    coroutine::ValueAsync<IOResult> write_fully(SocketTCP& s, essential::Span<> buffer) noexcept;
+    coroutine::ValueAsync<IOResult> write_fully(SocketTCP& s, Span<> buffer) noexcept;
 }
 

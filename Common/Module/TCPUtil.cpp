@@ -23,28 +23,28 @@
 #include "kls/io/TCPUtil.h"
 
 namespace kls::io {
-    coroutine::ValueAsync<IOResult> read_fully(SocketTCP& s, essential::Span<> buffer) noexcept {
-        auto bytes = essential::static_span_cast<char>(buffer);
+    coroutine::ValueAsync<IOResult> read_fully(SocketTCP& s, Span<> buffer) noexcept {
+        auto bytes = static_span_cast<char>(buffer);
         if (buffer.size() == 0) co_return IOResult(IO_OK, 0);
         for (;;) {
             if (auto read_op = co_await s.read(bytes); read_op.success()) {
                 auto done = read_op.result();
                 if (done == 0) co_return IOResult(IO_EOF);
                 if (done == bytes.size()) co_return IOResult(IO_OK, int32_t(buffer.size()));
-                bytes = essential::Span<char>(bytes.data() + done, bytes.size() - done);
+                bytes = bytes.trim_front(done);
             } else co_return read_op;
         }
     }
 
-    coroutine::ValueAsync<IOResult> write_fully(SocketTCP& s, essential::Span<> buffer) noexcept {
-        auto bytes = essential::static_span_cast<char>(buffer);
+    coroutine::ValueAsync<IOResult> write_fully(SocketTCP& s, Span<> buffer) noexcept {
+        auto bytes = static_span_cast<char>(buffer);
         if (buffer.size() == 0) co_return IOResult(IO_OK, 0);
         for (;;) {
             if (auto write_op = co_await s.write(bytes); write_op.success()) {
                 auto done = write_op.result();
                 if (done == 0) co_return IOResult(IO_EOF);
                 if (done == bytes.size()) co_return IOResult(IO_OK, int32_t(buffer.size()));
-                bytes = essential::Span<char>(bytes.data() + done, bytes.size() - done);
+                bytes = bytes.trim_front(done);
             } else co_return write_op;
         }
     }

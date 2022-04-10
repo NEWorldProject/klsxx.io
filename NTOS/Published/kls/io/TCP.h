@@ -33,7 +33,7 @@ namespace kls::io {
     struct IoVec : private WSABUF {
         constexpr IoVec() noexcept = default;
 
-        IoVec(essential::Span<> span) noexcept { //NOLINT
+        IoVec(Span<> span) noexcept { //NOLINT
             len = static_cast<ULONG>(span.size());
             buf = static_cast<char*>(span.data());
         }
@@ -45,13 +45,13 @@ namespace kls::io {
     };
 
     struct SocketTCP: PmrBase {
-        virtual IOAwait<IOResult> read(essential::Span<> buffer) noexcept = 0;
+        virtual IOAwait<IOResult> read(Span<> buffer) noexcept = 0;
 
-        virtual IOAwait<IOResult> write(essential::Span<> buffer) noexcept = 0;
+        virtual IOAwait<IOResult> write(Span<> buffer) noexcept = 0;
 
-        virtual IOAwait<IOResult> readv(essential::Span<IoVec> vec) noexcept = 0;
+        virtual IOAwait<IOResult> readv(Span<IoVec> vec) noexcept = 0;
 
-        virtual IOAwait<IOResult> writev(essential::Span<IoVec> vec) noexcept = 0;
+        virtual IOAwait<IOResult> writev(Span<IoVec> vec) noexcept = 0;
 
         virtual IOAwait<Status> close() noexcept = 0;
     };

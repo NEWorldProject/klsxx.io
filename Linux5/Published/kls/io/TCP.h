@@ -34,19 +34,19 @@ namespace kls::io {
     struct IoVec : private iovec {
         constexpr IoVec() noexcept = default;
 
-        IoVec(essential::Span<> span) noexcept: IoVec(span.data(), span.size()) {}
+        IoVec(Span<> span) noexcept: IoVec(span.data(), span.size()) {}
 
         IoVec(void* data, size_t size) noexcept: iovec{data, size} {}
     };
 
     struct SocketTCP: PmrBase {
-        virtual IOAwait<IOResult> read(essential::Span<> buffer) noexcept = 0;
+        virtual IOAwait<IOResult> read(Span<> buffer) noexcept = 0;
 
-        virtual IOAwait<IOResult> write(essential::Span<> buffer) noexcept = 0;
+        virtual IOAwait<IOResult> write(Span<> buffer) noexcept = 0;
 
-        virtual VecAwait readv(essential::Span<IoVec> vec) noexcept = 0;
+        virtual VecAwait readv(Span<IoVec> vec) noexcept = 0;
 
-        virtual VecAwait writev(essential::Span<IoVec> vec) noexcept = 0;
+        virtual VecAwait writev(Span<IoVec> vec) noexcept = 0;
 
         virtual IOAwait<Status> close() noexcept = 0;
     };

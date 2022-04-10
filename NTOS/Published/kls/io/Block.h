@@ -39,8 +39,8 @@ namespace kls::io {
             F_EXLOCK = 32ul
         };
 
-		virtual IOAwait<IOResult> read(essential::Span<> span, uint64_t offset) noexcept = 0;
-		virtual IOAwait<IOResult> write(essential::Span<> span, uint64_t offset) noexcept = 0;
+		virtual IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept = 0;
+		virtual IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept = 0;
         virtual Await sync() noexcept = 0;
         virtual Await close() noexcept = 0;
 	};

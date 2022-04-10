@@ -66,7 +66,7 @@ namespace {
     public:
         explicit SocketTcpImpl(SOCKET s) noexcept: m_socket(s) {}
 
-        IOAwait<IOResult> read(essential::Span<> buffer) noexcept override {
+        IOAwait<IOResult> read(Span<> buffer) noexcept override {
             auto iov = IoVec(buffer);
             auto v = reinterpret_cast<LPWSABUF>(&iov);
             return {
@@ -77,7 +77,7 @@ namespace {
             };
         }
 
-        IOAwait<IOResult> write(essential::Span<> buffer) noexcept override {
+        IOAwait<IOResult> write(Span<> buffer) noexcept override {
             auto iov = IoVec(buffer);
             auto v = reinterpret_cast<LPWSABUF>(&iov);
             return {
@@ -87,7 +87,7 @@ namespace {
             };
         }
 
-        IOAwait<IOResult> readv(essential::Span<IoVec> vec) noexcept override {
+        IOAwait<IOResult> readv(Span<IoVec> vec) noexcept override {
             auto v = reinterpret_span_cast<WSABUF>(vec);
             return {
                     [this, &v](LPOVERLAPPED o) noexcept -> DWORD {
@@ -97,7 +97,7 @@ namespace {
             };
         }
 
-        IOAwait<IOResult> writev(essential::Span<IoVec> vec) noexcept override {
+        IOAwait<IOResult> writev(Span<IoVec> vec) noexcept override {
             auto v = reinterpret_span_cast<WSABUF>(vec);
             return {
                     [this, &v](LPOVERLAPPED o) noexcept -> DWORD {
