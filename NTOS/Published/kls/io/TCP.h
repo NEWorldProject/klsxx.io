@@ -26,10 +26,15 @@
 #include <cstdint>
 #include "Await.h"
 #include "kls/io/IP.h"
+#include "kls/Handle.h"
 #include "kls/coroutine/Async.h"
 #include "kls/essential/Memory.h"
 
 namespace kls::io {
+    namespace detail {
+        struct TCPHelper;
+    }
+
     struct IoVec : private WSABUF {
         constexpr IoVec() noexcept = default;
 
@@ -44,28 +49,26 @@ namespace kls::io {
         }
     };
 
-    struct SocketTCP: PmrBase {
-        virtual IOAwait<IOResult> read(Span<> buffer) noexcept = 0;
-
-        virtual IOAwait<IOResult> write(Span<> buffer) noexcept = 0;
-
-        virtual IOAwait<IOResult> readv(Span<IoVec> vec) noexcept = 0;
-
-        virtual IOAwait<IOResult> writev(Span<IoVec> vec) noexcept = 0;
-
-        virtual IOAwait<Status> close() noexcept = 0;
+    struct SocketTCP: Handle<uintptr_t> {
+        IOAwait<IOResult> read(Span<> buffer) noexcept;
+        IOAwait<IOResult> write(Span<> buffer) noexcept;
+        IOAwait<IOResult> readv(Span<IoVec> vec) noexcept;
+        IOAwait<IOResult> writev(Span<IoVec> vec) noexcept;
+        IOAwait<Status> close() noexcept;
+    private:
+        friend struct ::kls::io::detail::TCPHelper;
+        explicit SocketTCP(uintptr_t h);
     };
 
-    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> connect(Address address, int port);
+    coroutine::ValueAsync<SafeHandle<SocketTCP>> connect(Address address, int port);
 
     struct AcceptorTCP : PmrBase {
         struct Result {
-            Peer peer{};
-            std::unique_ptr<SocketTCP> handle{nullptr};
+            Peer peer;
+            SafeHandle<SocketTCP> handle;
         };
 
         virtual coroutine::ValueAsync<Result> once() = 0;
-
         virtual IOAwait<Status> close() noexcept = 0;
     };
 

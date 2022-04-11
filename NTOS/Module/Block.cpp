@@ -29,14 +29,15 @@
 namespace {
     using namespace kls;
     using namespace kls::io;
+    using namespace kls::io::detail;
     using namespace kls::essential;
 
     temp::u16string ntos_get_path(std::string_view path_utf8) noexcept {
         auto path_wide = temp::vector<char16_t>(path_utf8.length() + 2);
         path_wide[MultiByteToWideChar(
-            CP_UTF8, MB_COMPOSITE,
-            path_utf8.data(), static_cast<int>(path_utf8.size()),
-            reinterpret_cast<LPWSTR>(path_wide.data()), static_cast<int>(path_wide.capacity())
+                CP_UTF8, MB_COMPOSITE,
+                path_utf8.data(), static_cast<int>(path_utf8.size()),
+                reinterpret_cast<LPWSTR>(path_wide.data()), static_cast<int>(path_wide.capacity())
         )] = 0;
         std::replace(path_wide.begin(), path_wide.end(), L'/', L'\\');
         return temp::u16string(uR"(\\?\)") + path_wide.data();
@@ -55,25 +56,25 @@ namespace {
     DWORD ntos_file_make_creation_disposition(uint32_t flags) noexcept {
         DWORD disposition{};
         switch (flags & (Block::F_CREAT | Block::F_EXCL | Block::F_TRUNC)) {
-        case 0ul:
-        case Block::F_EXCL:
-            disposition = OPEN_EXISTING;
-            break;
-        case Block::F_CREAT:
-            disposition = OPEN_ALWAYS;
-            break;
-        case Block::F_CREAT | Block::F_EXCL:
-        case Block::F_CREAT | Block::F_TRUNC | Block::F_EXCL:
-            disposition = CREATE_NEW;
-            break;
-        case Block::F_TRUNC:
-        case Block::F_TRUNC | Block::F_EXCL:
-            disposition = TRUNCATE_EXISTING;
-            break;
-        case Block::F_CREAT | Block::F_TRUNC:
-            disposition = CREATE_ALWAYS;
-            break;
-        default:;
+            case 0ul:
+            case Block::F_EXCL:
+                disposition = OPEN_EXISTING;
+                break;
+            case Block::F_CREAT:
+                disposition = OPEN_ALWAYS;
+                break;
+            case Block::F_CREAT | Block::F_EXCL:
+            case Block::F_CREAT | Block::F_TRUNC | Block::F_EXCL:
+                disposition = CREATE_NEW;
+                break;
+            case Block::F_TRUNC:
+            case Block::F_TRUNC | Block::F_EXCL:
+                disposition = TRUNCATE_EXISTING;
+                break;
+            case Block::F_CREAT | Block::F_TRUNC:
+                disposition = CREATE_ALWAYS;
+                break;
+            default:;
         }
         return disposition;
     }
@@ -85,24 +86,24 @@ namespace {
     auto ntos_create_file(std::string_view path_utf8, uint32_t flags) {
         const auto path = ntos_get_path(path_utf8);
         const auto hFile = CreateFileW(
-            reinterpret_cast<LPCWSTR>(path.c_str()),
-            ntos_file_make_access(flags),
-            ntos_file_make_share(flags),
-            nullptr,
-            ntos_file_make_creation_disposition(flags),
-            FILE_FLAG_OVERLAPPED | FILE_FLAG_WRITE_THROUGH,
-            nullptr
+                reinterpret_cast<LPCWSTR>(path.c_str()),
+                ntos_file_make_access(flags),
+                ntos_file_make_share(flags),
+                nullptr,
+                ntos_file_make_creation_disposition(flags),
+                FILE_FLAG_OVERLAPPED | FILE_FLAG_WRITE_THROUGH,
+                nullptr
         );
         if (hFile == INVALID_HANDLE_VALUE) {
             const auto error = GetLastError();
             if (error == ERROR_FILE_EXISTS && (flags & Block::F_CREAT) && !(flags & Block::F_EXCL))
                 throw exception_errc(IO_EISDIR);
             else
-                throw exception_errc(detail::map_error(error));
+                throw exception_errc(map_error(error));
         }
         const auto ret = hFile;
         try {
-            detail::IOCP::bind(hFile);
+            IOCP::bind(hFile);
         }
         catch (...) {
             CloseHandle(hFile);
@@ -110,70 +111,69 @@ namespace {
         }
         return ret;
     }
-
-    class BlockImpl : public Block {
-    public:
-        explicit BlockImpl(HANDLE h) noexcept : m_handle(h) {}
-
-        IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept override {
-            return {
-                    [this, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
-                        // According to related MSDN documentation,
-                        // IOCP overlapped ReadFile/WriteFile cannot return success information synchonously
-                        // We handle it in the reversed manner: if it fails, returns the error directly.
-                        // Otherwise reports is as PENDING as result is delivered asychronously by the callback
-                        // Same for the function below
-                        setOverlapped(o, offset);
-                        const auto size = static_cast<DWORD>(span.size());
-                        if (ReadFile(m_handle, span.data(), size, nullptr, o) == 0) return GetLastError();
-                        return ERROR_IO_PENDING;
-                    }
-            };
-        }
-
-        IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept override {
-            return {
-                    [this, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
-                        setOverlapped(o, offset);
-                        const auto size = static_cast<DWORD>(span.size());
-                        if (WriteFile(m_handle, span.data(), size, nullptr, o) == 0) return GetLastError();
-                        return ERROR_IO_PENDING;
-                    }
-            };
-        }
-
-        Await sync() noexcept override {
-            return {
-                    [this]() noexcept -> DWORD {
-                        if (FlushFileBuffers(m_handle)) return ERROR_SUCCESS; else return GetLastError();
-                    }
-            };
-        }
-
-        Await close() noexcept override {
-            return {
-                    [this]() noexcept -> DWORD {
-                        if (CloseHandle(m_handle)) return ERROR_SUCCESS; else return GetLastError();
-                    }
-            };
-        }
-    private:
-        HANDLE m_handle;
-
-        static void setOverlapped(LPOVERLAPPED o, uint64_t offset) noexcept {
-            static constexpr uint64_t mask = std::numeric_limits<DWORD>::max();
-            static constexpr uint64_t shift = std::numeric_limits<DWORD>::digits;
-            o->Offset = static_cast<DWORD>(offset && mask);
-            o->OffsetHigh = static_cast<DWORD>(offset >> shift);
-        }
-    };
 }
 
 #include <filesystem>
 
 namespace kls::io {
-    coroutine::ValueAsync<std::unique_ptr<Block>> open_block(std::string_view path, uint32_t flags) {
-        auto absolute = std::filesystem::absolute({ path }).generic_string();
-        co_return std::make_unique<BlockImpl>(ntos_create_file(absolute, flags));
+    static void setOverlapped(LPOVERLAPPED o, uint64_t offset) noexcept {
+        static constexpr uint64_t mask = std::numeric_limits<DWORD>::max();
+        static constexpr uint64_t shift = std::numeric_limits<DWORD>::digits;
+        o->Offset = static_cast<DWORD>(offset & mask);
+        o->OffsetHigh = static_cast<DWORD>(offset >> shift);
+    }
+
+    coroutine::ValueAsync<SafeHandle<Block>> Block::open(std::string_view path, uint32_t flags) {
+        auto absolute = std::filesystem::absolute({path}).generic_string();
+        co_return SafeHandle(Block(reinterpret_cast<uintptr_t>(ntos_create_file(absolute, flags))));
+    }
+
+    Block::Block(uintptr_t h): Handle<uintptr_t>([](uintptr_t h) noexcept {}, h) {}
+
+    IOAwait<IOResult> Block::read(Span<> span, uint64_t offset) noexcept {
+        auto handle = reinterpret_cast<HANDLE>(value());
+        return {
+                [handle, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
+                    // According to related MSDN documentation,
+                    // IOCP overlapped ReadFile/WriteFile cannot return success information synchonously
+                    // We handle it in the reversed manner: if it fails, returns the error directly.
+                    // Otherwise reports is as PENDING as result is delivered asychronously by the callback
+                    // Same for the function below
+                    setOverlapped(o, offset);
+                    const auto size = static_cast<DWORD>(span.size());
+                    if (ReadFile(handle, span.data(), size, nullptr, o) == 0) return GetLastError();
+                    return ERROR_IO_PENDING;
+                }
+        };
+    }
+
+    IOAwait<IOResult> Block::write(Span<> span, uint64_t offset) noexcept {
+        auto handle = reinterpret_cast<HANDLE>(value());
+        return {
+                [handle, &span, offset](LPOVERLAPPED o) noexcept -> DWORD {
+                    setOverlapped(o, offset);
+                    const auto size = static_cast<DWORD>(span.size());
+                    if (WriteFile(handle, span.data(), size, nullptr, o) == 0) return GetLastError();
+                    return ERROR_IO_PENDING;
+                }
+        };
+    }
+
+    Await Block::sync() noexcept {
+        auto handle = reinterpret_cast<HANDLE>(value());
+        return {
+                [handle]() noexcept -> DWORD {
+                    if (FlushFileBuffers(handle)) return ERROR_SUCCESS; else return GetLastError();
+                }
+        };
+    }
+
+    Await Block::close() noexcept {
+        auto handle = reinterpret_cast<HANDLE>(value());
+        return {
+                [handle]() noexcept -> DWORD {
+                    if (CloseHandle(handle)) return ERROR_SUCCESS; else return GetLastError();
+                }
+        };
     }
 }

@@ -35,14 +35,14 @@ TEST(kls_io, FileEcho) {
     static constexpr auto payload_size = payload.size() + 1;
 
     auto Write = []() -> ValueAsync<bool> {
-        auto file = co_await open_block("./test.kls.io.file.temp", Block::F_WRITE | Block::F_CREAT);
+        auto file = co_await Block::open("./test.kls.io.file.temp", Block::F_WRITE | Block::F_CREAT);
         co_return co_await uses(file, [](Block& file) -> ValueAsync<int> {
             co_return (co_await file.write({ payload.data(), payload_size }, 0)).get_result() == payload_size;
         });
     };
 
     auto Read = []() -> ValueAsync<bool> {
-        auto file = co_await open_block("./test.kls.io.file.temp", Block::F_READ);
+        auto file = co_await Block::open("./test.kls.io.file.temp", Block::F_READ);
         co_return co_await uses(file, [](Block& file) -> ValueAsync<int> {
             char buffer[1000];
             if ((co_await file.read({ buffer, 1000 }, 0)).get_result() != payload_size) co_return false;
