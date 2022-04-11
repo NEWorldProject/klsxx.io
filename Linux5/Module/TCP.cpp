@@ -24,75 +24,32 @@
 #include "Uring.h"
 #include "kls/io/TCP.h"
 
+namespace kls::io::detail {
+    struct TCPHelper {
+        static SocketTCP socket(int s) { return SocketTCP{s}; }
+    };
+}
+
 namespace {
     using namespace kls;
     using namespace kls::io;
     using namespace kls::io::detail;
     using namespace kls::essential;
 
-    class TcpImpl : public SocketTCP {
-        template<Uring::Ops Op>
-        IOAwait<IOResult> simple(Span<> buffer) {
-            auto lk = m_core->lock();
-            return m_core->create<IOResult, Op>(mFd, buffer.data(), buffer.size(), 0);
-        }
-
-        template<Uring::Ops Op>
-        VecAwait aggregated(Span<iovec> vec) {
-            msghdr message{
-                    .msg_name = nullptr, .msg_namelen = 0,
-                    .msg_iov = vec.data(), .msg_iovlen = vec.size(),
-                    .msg_control = nullptr, .msg_controllen = 0, .msg_flags = 0
-            };
-            auto lk = m_core->lock();
-            return m_core->create_vec<Op>(mFd, message, 0);
-        }
-
-    public:
-        TcpImpl(int socket, std::shared_ptr<Uring> core) noexcept: mFd{socket}, m_core{std::move(core)} {}
-
-        IOAwait<IOResult> read(Span<> buffer) noexcept override { return simple<Uring::Recv>(buffer); }
-
-        IOAwait<IOResult> write(Span<> buffer) noexcept override { return simple<Uring::Send>(buffer); }
-
-        VecAwait readv(Span<IoVec> vec) noexcept override {
-            return aggregated<Uring::RecvMsg>(reinterpret_span_cast<iovec>(vec));
-        }
-
-        VecAwait writev(Span<IoVec> vec) noexcept override {
-            return aggregated<Uring::SendMsg>(reinterpret_span_cast<iovec>(vec));
-        }
-
-        IOAwait<Status> close() noexcept override {
-            auto lk = m_core->lock();
-            return m_core->create<Status, Uring::Close>(mFd);
-        }
-
-    private:
-        const int mFd;
-        std::shared_ptr<Uring> m_core;
-    };
-
     class AcceptImpl : public AcceptorTCP {
     public:
         explicit AcceptImpl(int socket) noexcept: mFd(socket) {}
-
-        IOAwait<Status> close() noexcept override {
-            auto lk = m_core->lock();
-            return m_core->create<Status, Uring::Close>(mFd);
-        }
-
+        IOAwait<Status> close() noexcept override { return io_plain<Status, IoOps::Close>(mFd); }
     protected:
         const int mFd;
-        std::shared_ptr<Uring> m_core = Uring::get();
+        SafeHandle<Uring> m_core = Uring::get();
 
-        IOAwait<IOResult> accept(sockaddr *address, socklen_t& len) noexcept {
-            auto lk = m_core->lock();
-            return m_core->create<IOResult, Uring::Accept>(mFd, address, &len, 0);
+        IOAwait<IOResult> accept(sockaddr *address, socklen_t &len) noexcept {
+            return io_plain<IOResult, IoOps::Accept>(mFd, address, &len, 0);
         }
     };
 
-    using PSAddr = sockaddr*;
+    using PSAddr = sockaddr *;
 
     class AcceptImpl4 : public AcceptImpl {
     public:
@@ -102,10 +59,7 @@ namespace {
             sockaddr_in peer{};
             socklen_t len{sizeof(peer)};
             const auto res = (co_await accept(PSAddr(&peer), len)).get_result();
-            co_return Result{
-                    .peer = from_os_ip(peer),
-                    .handle = std::make_unique<TcpImpl>(res, m_core)
-            };
+            co_return Result{.peer = from_os_ip(peer), .handle = SafeHandle{TCPHelper::socket(res)}};
         }
     };
 
@@ -117,41 +71,37 @@ namespace {
             sockaddr_in6 peer{};
             socklen_t len{sizeof(peer)};
             const auto res = (co_await accept(PSAddr(&peer), len)).get_result();
-            co_return Result{
-                    .peer = from_os_ip(peer),
-                    .handle = std::make_unique<TcpImpl>(res, m_core)
-            };
+            co_return Result{.peer = from_os_ip(peer), .handle = SafeHandle{TCPHelper::socket(res)}};
         }
     };
 
-    template <class SockAdr>
-    IOAwait<IOResult> connect(Uring &core, int socket, const SockAdr& address) noexcept {
-        auto lk = core.lock();
-        return core.create<IOResult, Uring::Connect>(socket, PSAddr(&address), sizeof(SockAdr));
+    template<class SockAdr>
+    IOAwait<IOResult> connect(int socket, const SockAdr &address) noexcept {
+        return io_plain<IOResult, IoOps::Connect>(socket, PSAddr(&address), sizeof(SockAdr));
     }
 
-    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> connect4(Address address, int port) {
-        std::shared_ptr<Uring> core = Uring::get();
+    coroutine::ValueAsync<SafeHandle<SocketTCP>> connect4(Address address, int port) {
+        const auto core = Uring::get();
         const auto sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock != -1) {
             sockaddr_in in = to_os_ipv4(address, port);
-            if (const auto res = co_await connect(*core, sock, in); res.success())
-                co_return std::make_unique<TcpImpl>(sock, std::move(core));
+            if (const auto res = co_await connect(sock, in); res.success())
+                co_return SafeHandle{TCPHelper::socket(sock)};
             close(sock);
         }
-        throw exception_errc(detail::map_error(errno));
+        throw exception_errc(map_error(errno));
     }
 
-    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> connect6(Address address, int port) {
-        std::shared_ptr<Uring> core = Uring::get();
+    coroutine::ValueAsync<SafeHandle<SocketTCP>> connect6(Address address, int port) {
+        const auto core = Uring::get();
         const auto sock = socket(AF_INET6, SOCK_STREAM, 0);
         if (sock != -1) {
             sockaddr_in6 in = to_os_ipv6(address, port);
-            if (const auto res = co_await connect(*core, sock, in); res.success())
-                co_return std::make_unique<TcpImpl>(sock, std::move(core));
+            if (const auto res = co_await connect(sock, in); res.success())
+                co_return SafeHandle{TCPHelper::socket(sock)};
             close(sock);
         }
-        throw exception_errc(detail::map_error(errno));
+        throw exception_errc(map_error(errno));
     }
 
     std::unique_ptr<AcceptorTCP> acceptor4(Address address, int port, int backlog) {
@@ -165,7 +115,7 @@ namespace {
             error:
             close(sock);
         }
-        throw exception_errc(detail::map_error(errno));
+        throw exception_errc(map_error(errno));
     }
 
     std::unique_ptr<AcceptorTCP> acceptor6(Address address, int port, int backlog) {
@@ -179,12 +129,43 @@ namespace {
             error:
             close(sock);
         }
-        throw exception_errc(detail::map_error(errno));
+        throw exception_errc(map_error(errno));
     }
 }
 
 namespace kls::io {
-    coroutine::ValueAsync<std::unique_ptr<SocketTCP>> connect(Address address, int port) {
+    template<IoOps Op>
+    static IOAwait<IOResult> simple(int fd, Span<> buffer) {
+        return io_plain<IOResult, Op>(fd, buffer.data(), buffer.size(), 0);
+    }
+
+    template<IoOps Op>
+    static VecAwait aggregated(int fd, Span<iovec> vec) {
+        msghdr message{
+                .msg_name = nullptr, .msg_namelen = 0,
+                .msg_iov = vec.data(), .msg_iovlen = vec.size(),
+                .msg_control = nullptr, .msg_controllen = 0, .msg_flags = 0
+        };
+        return io_message<Op>(fd, message, 0);
+    }
+
+    SocketTCP::SocketTCP(int h) : Handle<int>([c = Uring::get()](int h) noexcept {}, h) {}
+
+    IOAwait<IOResult> SocketTCP::read(Span<> buffer) noexcept { return simple<IoOps::Recv>(value(), buffer); }
+
+    IOAwait<IOResult> SocketTCP::write(Span<> buffer) noexcept { return simple<IoOps::Send>(value(), buffer); }
+
+    VecAwait SocketTCP::readv(Span<IoVec> vec) noexcept {
+        return aggregated<IoOps::RecvMsg>(value(), reinterpret_span_cast<iovec>(vec));
+    }
+
+    VecAwait SocketTCP::writev(Span<IoVec> vec) noexcept {
+        return aggregated<IoOps::SendMsg>(value(), reinterpret_span_cast<iovec>(vec));
+    }
+
+    IOAwait<Status> SocketTCP::close() noexcept { return io_plain<Status, IoOps::Close>(value()); }
+
+    coroutine::ValueAsync<SafeHandle<SocketTCP>> connect(Address address, int port) {
         switch (address.family()) {
             case Address::AF_IPv4:
                 return connect4(address, port);

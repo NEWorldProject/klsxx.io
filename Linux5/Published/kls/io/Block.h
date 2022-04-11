@@ -25,11 +25,12 @@
 #include <cstdint>
 #include <string_view>
 #include "Await.h"
+#include "kls/Handle.h"
 #include "kls/coroutine/Async.h"
 #include "kls/essential/Memory.h"
 
 namespace kls::io {
-	struct Block: PmrBase {
+	struct Block: Handle<int> {
         enum Flag {
             F_READ = 1ul,
             F_WRITE = 2ul,
@@ -39,11 +40,12 @@ namespace kls::io {
             F_EXLOCK = 32ul
         };
 
-		virtual IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept = 0;
-		virtual IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept = 0;
-        virtual IOAwait<Status> sync() noexcept = 0;
-        virtual IOAwait<Status> close() noexcept = 0;
+        static coroutine::ValueAsync<SafeHandle<Block>> open(std::string_view path, uint32_t flags);
+		IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept;
+		IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept;
+        IOAwait<Status> sync() noexcept;
+        IOAwait<Status> close() noexcept;
+    private:
+        explicit Block(int h);
 	};
-
-	coroutine::ValueAsync<std::unique_ptr<Block>> open_block(std::string_view path, uint32_t flags);
 }

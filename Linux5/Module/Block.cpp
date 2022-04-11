@@ -49,52 +49,41 @@ namespace {
         return result;
     }
 
-    IOAwait<IOResult> open(Uring &core, const char *path, uint32_t flags, mode_t mode) {
-        auto lk = core.lock();
-        return core.create<IOResult, Uring::Open>(0, path, static_cast<int>(flags), mode);
+    IOAwait<IOResult> open_impl(Uring &core, const char *path, uint32_t flags, mode_t mode) {
+        return io_plain<IOResult, IoOps::Open>(0, path, static_cast<int>(flags), mode);
     }
-
-    class Impl final : public Block {
-        template<Uring::Ops Op>
-        IOAwait<IOResult> simple(Span<> span, uint64_t offset) noexcept {
-            auto lk = m_core->lock();
-            return m_core->create<IOResult, Op>(mFd, span.data(), span.size(), offset);
-        }
-
-    public:
-        Impl(int fd, std::shared_ptr<Uring> &&core) noexcept: mFd{fd}, m_core{std::move(core)} {}
-
-        IOAwait<IOResult> read(Span<> span, uint64_t offset) noexcept override {
-            return simple<Uring::Read>(span, offset);
-        }
-
-        IOAwait<IOResult> write(Span<> span, uint64_t offset) noexcept override {
-            return simple<Uring::Write>(span, offset);
-        }
-
-        IOAwait<Status> sync() noexcept override {
-            auto lk = m_core->lock();
-            return m_core->create<Status, Uring::Sync>(mFd, IORING_FSYNC_DATASYNC);
-        }
-
-        IOAwait<Status> close() noexcept override {
-            auto lk = m_core->lock();
-            return m_core->create<Status, Uring::Close>(mFd);
-        }
-
-    private:
-        const int mFd;
-        std::shared_ptr<Uring> m_core;
-    };
 }
 
 namespace kls::io {
-    coroutine::ValueAsync<std::unique_ptr<Block>> open_block(std::string_view path, uint32_t flags) {
-        std::shared_ptr<Uring> core = Uring::get();
+    coroutine::ValueAsync<SafeHandle<Block>> Block::open(std::string_view path, uint32_t flags) {
+        auto core = Uring::get();
         const auto absolute = std::filesystem::absolute({path}).generic_string();
-        if (const auto res = co_await open(*core, absolute.c_str(), flag_conv(flags), 00600); res.success())
-            co_return std::make_unique<Impl>(res.result(), std::move(core));
+        if (const auto res = co_await open_impl(*core, absolute.c_str(), flag_conv(flags), 00600); res.success())
+            co_return SafeHandle{Block{res.result()}};
         else
             throw exception_errc(res.error());
+    }
+
+    Block::Block(int h) : Handle<int>([c = Uring::get()](int h) noexcept {}, h) {}
+
+    template<IoOps Op>
+    static IOAwait<IOResult> simple(const int fd, Span<> span, uint64_t offset) noexcept {
+        return io_plain<IOResult, Op>(fd, span.data(), span.size(), offset);
+    }
+
+    IOAwait<IOResult> Block::read(Span<> span, uint64_t offset) noexcept {
+        return simple<IoOps::Read>(value(), span, offset);
+    }
+
+    IOAwait<IOResult> Block::write(Span<> span, uint64_t offset) noexcept {
+        return simple<IoOps::Write>(value(), span, offset);
+    }
+
+    IOAwait<Status> Block::sync() noexcept {
+        return io_plain<Status, IoOps::Sync>(value(), IORING_FSYNC_DATASYNC);
+    }
+
+    IOAwait<Status> Block::close() noexcept {
+        return io_plain<Status, IoOps::Close>(value());
     }
 }

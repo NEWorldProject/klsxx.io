@@ -30,7 +30,7 @@
 #include "kls/coroutine/Trigger.h"
 
 namespace kls::io::detail {
-	class Uring;
+	class IoRing;
 
 	Status map_error(int32_t sys) noexcept;
     IOResult map_result(int32_t sys) noexcept;
@@ -46,14 +46,8 @@ namespace kls::io::detail {
         }
     private:
         int32_t m_result{};
-
-        void release(int32_t status) {
-            m_result = status;
-            SingleExecutorTrigger::pull();
-        }
-
-        friend class detail::Uring;
-
+        void release(int32_t status) { m_result = status, SingleExecutorTrigger::pull(); }
+        friend class detail::IoRing;
     protected:
         [[nodiscard]] auto get_result() const noexcept { return m_result; }
     };
