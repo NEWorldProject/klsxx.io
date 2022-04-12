@@ -114,7 +114,10 @@ namespace {
             throw exception_errc(map_error(WSAGetLastError()));
         }
 
-        IOAwait<Status> close() noexcept override { return closeAsync(m_socket); }
+        IOAwait<Status> close() noexcept override {
+            shutdown(m_socket, SD_BOTH);
+            return closeAsync(m_socket);
+        }
     protected:
         const SOCKET m_socket;
         const std::shared_ptr<WSA> m_wsa = WSA::get();
@@ -281,7 +284,10 @@ namespace kls::io {
         };
     }
 
-    IOAwait<Status> SocketTCP::close() noexcept { return closeAsync(value()); }
+    IOAwait<Status> SocketTCP::close() noexcept {
+        shutdown(value(), SD_BOTH);
+        return closeAsync(value());
+    }
 
     std::unique_ptr<AcceptorTCP> acceptor_tcp(Address address, int port, int backlog) {
         auto wsa = WSA::get();

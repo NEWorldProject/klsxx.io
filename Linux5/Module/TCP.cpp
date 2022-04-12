@@ -39,7 +39,10 @@ namespace {
     class AcceptImpl : public AcceptorTCP {
     public:
         explicit AcceptImpl(int socket) noexcept: mFd(socket) {}
-        IOAwait<Status> close() noexcept override { return io_plain<Status, IoOps::Close>(mFd); }
+        IOAwait<Status> close() noexcept override {
+            shutdown(mFd, SHUT_RDWR);
+            return io_plain<Status, IoOps::Close>(mFd);
+        }
     protected:
         const int mFd;
         SafeHandle<Uring> m_core = Uring::get();
@@ -163,7 +166,10 @@ namespace kls::io {
         return aggregated<IoOps::SendMsg>(value(), reinterpret_span_cast<iovec>(vec));
     }
 
-    IOAwait<Status> SocketTCP::close() noexcept { return io_plain<Status, IoOps::Close>(value()); }
+    IOAwait<Status> SocketTCP::close() noexcept {
+        shutdown(value(), SHUT_RDWR);
+        return io_plain<Status, IoOps::Close>(value());
+    }
 
     coroutine::ValueAsync<SafeHandle<SocketTCP>> connect(Address address, int port) {
         switch (address.family()) {
